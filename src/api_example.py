@@ -1,28 +1,19 @@
-import web, json
+import web, json, urllib
+import oauth, api
 from web_utils import *
 
-# necessary definitions for OAuth and REST API login
-# our Bullhorn OAuth client ID
-#client_id = '06ab09e7-b391-4e1c-a399-f3eca4475a81'
-#client_id = '6717406-d8b5-494c-8366-fc483b67a6b5'
-#client_id = '07d763a1-abfa-4ac5-840e-cee9157ab539'
-client_id = '42b64d2e-457e-4b9d-a6ab-4e9ebfeb2e7f'
-#client_id = 'b3892ddc-8b3a-4f8e-8aba-17df88d35b3a'
-# our Bullhorn OAuth secret
-client_secret = 'bhsecret'
-# Bullhorn OAuth service endpoint
-oauth_base_url = 'http://172.27.1.131:9292/oauth-services'
-oauth_redirect_url = 'http://localhost:9099/sample/oauth-callback'
-# Bullhorn REST API service endpoint
-api_base_url = 'http://ws:9090/rest-services'
-
+app_base_path = '/sample'
+oauth_redirect_path = app_base_path + '/oauth-callback'
 
 urls = (
-	'/sample/oauth-callback', 'auth',
-	'/sample/logout', 'reset',
-    '/sample/userid', 'userid'
+    app_base_path, 'userid',
+	oauth_redirect_path, 'auth',
+	app_base_path + '/logout', 'reset'
 )
 
+"""
+Set up a web.py application with session data stored on disk.
+"""
 app = web.application(urls, globals())
 if web.config.get('_session') is None:
     session = web.session.Session(app, web.session.DiskStore('sessions'),
@@ -31,71 +22,70 @@ if web.config.get('_session') is None:
 else:
     session = web.config._session
 
-def oauth_login(code):
-    noencode_params = join_dict({
-        'grant_type': 'authorization_code',
-        'client_id': client_id,
-        'client_secret': client_secret,
-        'redirect_uri': oauth_redirect_url,
-        'code': code
-    })
-    
-    return json_http_call(oauth_base_url + '/token', noencode_params)
 
-def api_login(access_code):
-    return json_http_call(api_base_url + '/login?version=*&access_token=' + access_code, None)
+def oauth_redirect_uri():
+    return web.ctx.home + oauth_redirect_path
+
+def auth_check():
+    if session.rest_token is None:
+        raise web.seeother(oauth.build_authorize_url(web.ctx.path, oauth_redirect_uri()))
 
 def api_call(command, method='GET', params=None):
-    if params is None:
-        params = { }
-    params["BhRestToken"] = session.rest_token
+    return api.make_call(session.rest_url, session.rest_token, command, method, params)
 
-    if method == 'GET':
-        return json_http_call("%s%s?%s" % (session.rest_url, command, join_dict(params)))
-    else:
-        return json_http_call("%s%s" % (session.rest_url, command), join_dict(params))
-
-def auth_check(sess, path):
-    if session.rest_token is None:
-        qstr = join_dict({
-            "client_id": client_id,
-            "response_type": "code",
-            "redirect_uri": oauth_redirect_url,
-            "state": path
-        })
-
-        raise web.seeother(oauth_base_url + "/authorize?" + qstr)
 
 class auth:
+    """
+    The OAuth authentication callback.  This will negotiate
+    an access token with Bullhorn OAuth given an authorization
+    token on the query string.  It will then use that access
+    token to obtain a REST API token.
+
+    The redirect URIs communicated to Bullhorn in your OAuth
+    configuration must contain the URI to this request handler.
+
+    Once the user enters credentials on the Bullhorn OAuth 
+    login page, his/her browser will be redirected here, with
+    a "code" query parameter appended, containing an authorization
+    code.
+    """
     def GET(self):
+        # parse the query string into a dictionary
         params = parseQuery(web.ctx.query)
         if session.access_token is None:
-            if "code" in params:
-                auth_token = params['code']
-                oauth_data = oauth_login(auth_token)
-                print(str(oauth_data))
-                session.access_token = oauth_data["access_token"]
+            if 'code' in params:
+                session.access_token = oauth.get_access_token(params['code'], oauth_redirect_uri())
             else:
-                raise web.seeother(oauth_base_url + "/authorize?client_id=%s&response_type=code" % (client_id))
+                web.ctx.status = "400"
+                return "oauth authorization code missing from parameters"
 
-        if session.rest_token is None:
-            api_login_data = api_login(session.access_token)
-            session.rest_token = api_login_data["BhRestToken"]
-            session.rest_url = api_login_data["restUrl"]
-        print(params["state"])    
-        raise web.seeother(params['state'])
+        api_login_data = api.login(session.access_token)
+        session.rest_url = api_login_data.rest_url
+        session.rest_token = api_login_data.rest_token
+
+        if 'state' in params:
+            redirect = urllib.unquote(params['state'])
+        else:
+            redirect = app_base_path
+        raise web.seeother(redirect)
 
 class userid:
+    """
+    Our sample API call.  Simply gets the logged-in user's
+    user ID using the /settings call.
+    """
     def GET(self):
-        auth_check(session, web.ctx.path) #web.ctx.homepath)
+        auth_check()
         data = api_call("settings/userId")
-        print(web.ctx.path)
-        return "your user ID is: %s" % data["userId"]
+        return "your user ID is: %s" % data["userId"] 
 
 class reset:
-	def GET(self):
-		session.kill()
-		return "session reset"
+    """
+    Clears the session.
+    """
+    def GET(self):
+        session.kill()
+        return "session reset"
 
 if __name__ == "__main__":
-	app.run()
+    app.run()

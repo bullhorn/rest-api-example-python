@@ -6,7 +6,7 @@ def parseQuery(q):
 		return { }
 	return dict([p.split("=") for p in q[1:].split("&")])
 
-def join_dict(d):
+def build_querystring(d):
     return '&'.join(['%s=%s' % (str(k), str(v)) for k, v in d.items()]) 
 
 def json_http_call(url, data=None):
