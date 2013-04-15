@@ -36,18 +36,19 @@ def api_call(command, method='GET', params=None):
 
 class auth:
     """
-    The OAuth authentication callback.  This will negotiate
-    an access token with Bullhorn OAuth given an authorization
-    token on the query string.  It will then use that access
-    token to obtain a REST API token.
-
-    The redirect URIs communicated to Bullhorn in your OAuth
-    configuration must contain the URI to this request handler.
-
+    This is the OAuth authentication callback.
+    
     Once the user enters credentials on the Bullhorn OAuth 
     login page, his/her browser will be redirected here, with
-    a "code" query parameter appended, containing an authorization
+    a "code" query parameter added, containing an authorization
     code.
+    
+    This code will then negotiate an access token with Bullhorn
+    OAuth given an authorization token on the query string.
+    It will then use that access token to obtain a REST API token.
+    
+    The URL of this call is what you must give to Bullhorn as your
+    OAuth callback URI.
     """
     def GET(self):
         # parse the query string into a dictionary
