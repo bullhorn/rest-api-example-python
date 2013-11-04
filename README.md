@@ -1,6 +1,7 @@
 bullhorn-api-example-python
 ===========================
-This a sample Python application that demonstrates a very simple usage of the Bullhorn REST API.
+This a sample Python application that demonstrates a very simple usage of the Bullhorn REST API from a Web application.
+
 The biggest initial hurdle for developers is typically getting OAuth authentication working properly, so much
 of this sample is dedicated to that.
 
